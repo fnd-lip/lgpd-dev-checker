@@ -5,6 +5,9 @@ Reaproveita as funcoes do notebook 02. Voce vai preencher 3 TODOs aqui.
 
 import os
 from pathlib import Path
+import re
+import json
+from src.pipeline.tools import run_tool_call
 
 import chromadb
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
@@ -180,6 +183,22 @@ class RAGPipeline:
     def answer(self, question: str, k: int = 5) -> dict:
         """Pipeline completo: retrieve + augment + generate. Retorna {answer, sources}."""
         hits = self.retrieve(question, k=k)
+        
+        tool_context = ""
+
+        article_match = re.search(
+            r"\bart\.?\s*(\d+)|artigo\s+(\d+)",
+            question,
+            re.IGNORECASE,
+        )
+
+        if article_match:
+            article_number = int(article_match.group(1) or article_match.group(2))
+            tool_result = run_tool_call(
+                "cite_article",
+                json.dumps({"article_number": article_number}),
+            )
+            tool_context = f"\n\n[tool:cite_article]\n{tool_result}"
 
         # SEU CODIGO AQUI — TODO 3
         # 1. Montar contexto concatenando os textos dos hits com cabecalho [source:page]
@@ -197,6 +216,9 @@ class RAGPipeline:
             f"[{hit['source']}:{hit['page']}]\n{hit['text']}"
             for hit in hits
         )
+
+        if tool_context:
+            contexto = f"{tool_context}\n\n{contexto}"
 
         prompt = PROMPT_TEMPLATE.format(
             context=contexto,
