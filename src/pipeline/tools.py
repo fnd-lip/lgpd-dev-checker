@@ -3,10 +3,12 @@
 Reaproveita o LAB-001. Voce vai preencher 1 TODO aqui (sua tool especifica).
 """
 
-from __future__ import annotations
-
 import json
+import re
+from pathlib import Path
 from typing import Any, Callable
+
+from pypdf import PdfReader
 
 
 # ============================================================================
@@ -27,37 +29,76 @@ from typing import Any, Callable
 
 
 # SEU CODIGO AQUI — TODO 4
-def my_domain_tool(arg1: str) -> str:
-    """Substitua esta funcao pela sua tool especifica.
+def cite_article(article_number: int) -> str:
+    """Retorna o texto de um artigo especifico da LGPD.
 
-    A funcao deve receber argumentos primitivos (str, int, float, bool) e
-    retornar string com o resultado (sera passado de volta ao LLM como tool result).
+    A funcao recebe o numero do artigo e busca o texto correspondente
+    no PDF local `data/corpus/lgpd.pdf`.
     """
-    return f"TODO: implementar tool para o argumento: {arg1}"
+    if article_number < 1:
+        return "ERROR: informe um numero de artigo valido, por exemplo 5"
+
+    project_root = Path(__file__).resolve().parents[2]
+    lgpd_path = project_root / "data" / "corpus" / "lgpd.pdf"
+
+    if not lgpd_path.exists():
+        return f"ERROR: arquivo nao encontrado: {lgpd_path}"
+
+    reader = PdfReader(str(lgpd_path))
+    full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    text = re.sub(r"\s+", " ", full_text).strip()
+
+    current_pattern = re.compile(
+        rf"\bArt\.\s*{article_number}\s*(?:º|o|°)?\b",
+        re.IGNORECASE,
+    )
+
+    current_match = current_pattern.search(text)
+    if not current_match:
+        return f"Art. {article_number} nao encontrado no PDF da LGPD."
+
+    next_pattern = re.compile(
+        rf"\bArt\.\s*{article_number + 1}\s*(?:º|o|°)?\b",
+        re.IGNORECASE,
+    )
+
+    next_match = next_pattern.search(text, current_match.end())
+
+    start = current_match.start()
+    end = next_match.start() if next_match else len(text)
+
+    return text[start:end].strip()
 
 
 TOOLS: list[dict[str, Any]] = [
     # SEU CODIGO AQUI — TODO 4 (continuacao)
     # Adicione o schema JSON da sua tool. Modelo (referencia LAB-001):
-    # {
-    #     "type": "function",
-    #     "function": {
-    #         "name": "my_domain_tool",
-    #         "description": "Descrever o que a tool faz em pt-BR — LLM le isso para decidir quando usar",
-    #         "parameters": {
-    #             "type": "object",
-    #             "properties": {
-    #                 "arg1": {"type": "string", "description": "..."},
-    #             },
-    #             "required": ["arg1"],
-    #         },
-    #     },
-    # },
+       {
+        "type": "function",
+        "function": {
+            "name": "cite_article",
+            "description": (
+                "Retorna o texto de um artigo especifico da LGPD a partir "
+                "do PDF local do corpus. Use quando a pergunta mencionar "
+                "um numero de artigo ou exigir citacao literal da LGPD."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "article_number": {
+                        "type": "integer",
+                        "description": "Numero do artigo da LGPD. Exemplo: 5, 6, 7, 18.",
+                    },
+                },
+                "required": ["article_number"],
+            },
+        },
+    },
 ]
 
 
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
-    # "my_domain_tool": my_domain_tool,
+    "cite_article": cite_article,
 }
 
 
