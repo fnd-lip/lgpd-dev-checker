@@ -45,8 +45,7 @@ class RAGPipeline:
     ) -> None:
         self.client, embed_api_base = _make_client()
         self.llm_model = llm_model or os.environ.get("LLM_MODEL", "gemini-2.5-flash-lite")
-        self.embed_model = embed_model or os.environ.get("EMBED_MODEL", "gemini-embedding-001")
-
+        self.embed_model = embed_model or os.environ.get("EMBED_MODEL", "local")
         self.embed_fn = DefaultEmbeddingFunction()
 
         self.corpus_dir = Path(corpus_dir)
@@ -66,7 +65,7 @@ class RAGPipeline:
 
         Ja deixei a estrutura do ciclo. Voce completa as 3 partes marcadas.
         """
-        # SEU CODIGO AQUI — TODO 1.A
+        # TODO 1.A
         # Iterar por todos os PDFs em self.corpus_dir.
         # Para cada PDF, ler todas as paginas com PdfReader e extrair texto.
         # Acumular numa lista `docs` com dicts: {"text": str, "source": str, "page": int}
@@ -93,7 +92,7 @@ class RAGPipeline:
         if not docs:
             raise RuntimeError("Nenhum texto extraivel encontrado nos PDFs do corpus")
 
-        # SEU CODIGO AQUI — TODO 1.B
+        # TODO 1.B
         # Aplicar RecursiveCharacterTextSplitter com chunk_size=800, overlap=100
         # Quebrar cada doc em chunks e construir lista `chunks` com:
         # {"id": unique_id, "text": str, "source": str, "page": int}
@@ -126,7 +125,7 @@ class RAGPipeline:
         if not chunks:
             raise RuntimeError("Nenhum chunk foi gerado a partir do corpus")
 
-        # SEU CODIGO AQUI — TODO 1.C
+        # TODO 1.C
         # Adicionar chunks no Chroma via self.collection.add(ids=, documents=, metadatas=)
         # Lembre de filtrar metadatas para conter apenas {source, page} (Chroma rejeita listas).
         batch_size = 100
@@ -150,7 +149,7 @@ class RAGPipeline:
     # ------------------------------------------------------------------ TODO 2
     def retrieve(self, query: str, k: int = 5) -> list[dict]:
         """Busca top-k chunks similares a query."""
-        # SEU CODIGO AQUI — TODO 2
+        # TODO 2
         # Usar self.collection.query(query_texts=[query], n_results=k)
         # Retornar lista de dicts: {"text", "source", "page", "distance"}
         # Dica: notebook 02, Etapa 4 — Retrieval.
@@ -180,10 +179,11 @@ class RAGPipeline:
         return hits
 
     # ------------------------------------------------------------------ TODO 3
-    def answer(self, question: str, k: int = 5) -> dict:
+    def answer(self, question: str, k: int = 8) -> dict:
         """Pipeline completo: retrieve + augment + generate. Retorna {answer, sources}."""
         hits = self.retrieve(question, k=k)
-        
+
+        question_lower = question.lower()
         tool_context = ""
 
         article_match = re.search(
@@ -192,21 +192,37 @@ class RAGPipeline:
             re.IGNORECASE,
         )
 
+        article_number = None
+
         if article_match:
             article_number = int(article_match.group(1) or article_match.group(2))
+        elif any(
+            termo in question_lower
+            for termo in [
+                "dado pessoal",
+                "dados pessoais",
+                "dado sensível",
+                "dado sensivel",
+                "dados sensíveis",
+                "dados sensiveis",
+            ]
+        ):
+            article_number = 5
+
+        if article_number:
             tool_result = run_tool_call(
                 "cite_article",
                 json.dumps({"article_number": article_number}),
             )
-            tool_context = f"\n\n[tool:cite_article]\n{tool_result}"
+            tool_context = f"\n\n[lgpd.pdf:Art. {article_number}]\n{tool_result}"
 
-        # SEU CODIGO AQUI — TODO 3
+        #  TODO 3
         # 1. Montar contexto concatenando os textos dos hits com cabecalho [source:page]
         # 2. Construir prompt com PROMPT_TEMPLATE (definido abaixo)
         # 3. Chamar self.client.chat.completions.create(model=self.llm_model, ...)
         # 4. Retornar {"answer": resposta, "sources": [(s, p) for h in hits]}
         # Dica: notebook 02, Etapa 5 — Augment + Generate.
-        if not hits:
+        if not hits and not tool_context:
             return {
                 "answer": "Nao encontrado no corpus.",
                 "sources": [],
@@ -250,15 +266,22 @@ class RAGPipeline:
             "sources": fontes,
         }
 
+PROMPT_TEMPLATE = """Voce e o LGPD Dev Checker, um assistente RAG para apoiar desenvolvedores em duvidas sobre LGPD e seguranca da informacao.
 
-PROMPT_TEMPLATE = """Voce e um assistente tecnico. Responda APENAS com base no contexto abaixo.
-Se a informacao nao estiver no contexto, diga "Nao encontrado no corpus".
-Sempre cite a fonte usando o formato [arquivo:pagina].
+Responda em portugues, de forma clara e objetiva.
+
+Use o contexto abaixo para responder. Se o contexto trouxer informacao relacionada, responda com base nele.
+So diga "Nao encontrado no corpus" se nenhum trecho recuperado tiver relacao com a pergunta.
+
+Quando a pergunta pedir diferenca, comparacao ou explicacao entre conceitos, organize a resposta em partes simples.
+
+Sempre que possivel, cite a fonte usando o formato [arquivo:pagina] ou [arquivo:Art. numero].
 
 CONTEXTO:
 {context}
 
-PERGUNTA: {question}
+PERGUNTA:
+{question}
 
 RESPOSTA:"""
 
