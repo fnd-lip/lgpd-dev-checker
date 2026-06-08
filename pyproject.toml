@@ -1,0 +1,32 @@
+[project]
+name = "projeto-portfolio"
+version = "0.1.0"
+description = "TODO substitua: 1 sentence pitch do seu projeto"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0",
+    "chromadb>=0.5",
+    "pypdf>=4.0",
+    "langchain-text-splitters>=0.2",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "streamlit>=1.30",
+    "pandas>=2.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "nbval>=0.11",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# Placeholders intencionais para o aluno preencher (TODOs do projeto)
+"src/pipeline/*.py" = ["F821", "F841"]
