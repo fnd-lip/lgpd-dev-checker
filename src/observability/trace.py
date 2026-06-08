@@ -45,4 +45,8 @@ def trace(operation: str, trace_id: str | None = None, **fields: Any) -> Iterato
         yield ctx
     finally:
         ctx["latency_ms"] = (time.perf_counter() - start) * 1000
-        log_event(f"{operation}_end", trace_id=tid, **{**fields, **ctx})
+
+        end_fields = {**fields, **ctx}
+        end_fields.pop("trace_id", None)
+
+        log_event(f"{operation}_end", trace_id=tid, **end_fields)

@@ -26,6 +26,9 @@ class ExactCache:
 
     def put(self, query: str, answer: str) -> None:
         self._store[self._key(query)] = answer
+        
+    def clear(self) -> None:
+        self._store.clear()
 
     def stats(self) -> dict[str, int]:
         return {"size": len(self._store)}
@@ -91,6 +94,11 @@ class SemanticCache:
         self._queries.append(query)
         self._embeddings.append(self._embed(query))
         self._answers.append(answer)
+    
+    def clear(self) -> None:
+        self._queries.clear()
+        self._embeddings.clear()
+        self._answers.clear()
 
     def stats(self) -> dict[str, Any]:
         return {"size": len(self._queries), "threshold": self.threshold}

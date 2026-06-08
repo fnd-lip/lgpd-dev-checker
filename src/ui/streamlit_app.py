@@ -29,10 +29,10 @@ from src.pipeline.routing import classify_complexity  # noqa: E402
 
 
 # ---------------------------------------------------------------- Streamlit UI
-st.set_page_config(page_title="Portfolio LLM Demo", page_icon=":robot:", layout="centered")
+st.set_page_config(page_title="LGPD Dev Checker", page_icon=":robot:", layout="centered")
 
-st.title(":robot: TODO — Substitua pelo titulo do seu projeto")
-st.caption("TODO — Substitua: 1-sentence pitch do seu projeto")
+st.title(":robot: LGPD Dev Checker")
+st.caption("Assistente RAG para ajudar desenvolvedores a consultar trechos da LGPD e guias da ANPD")
 
 
 # Inicializacao lazy de pipeline + caches
@@ -127,6 +127,6 @@ if query:
 
 st.divider()
 st.caption(
-    "TODO README — substitua por: problem statement, arquitetura, custo/latencia, decisoes de design. "
-    "Veja `README.md` do projeto para a estrutura completa."
+    "Este app usa RAG sobre documentos da LGPD/ANPD, tool-use para citar artigos da LGPD, "
+    "cache para reduzir chamadas repetidas e roteamento por complexidade."
 )
