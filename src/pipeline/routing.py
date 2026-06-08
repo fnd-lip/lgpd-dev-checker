@@ -27,15 +27,53 @@ def classify_complexity(query: str) -> RouteDecision:
     cheap_model = os.environ.get("CHEAP_MODEL", "gemini-2.5-flash-lite")
     premium_model = os.environ.get("PREMIUM_MODEL", "gemini-2.5-pro")
 
-    # SEU CODIGO AQUI — TODO 6
-    # Implemente heuristica simples para classificar a query como "simple" ou "complex".
-    # Sugestao de regras:
-    #   - len(query) < 60 e query termina em "?" → simple
-    #   - contem palavras como "explique", "compare", "analise", "projete" → complex
-    #   - default → simple
-    # Retorne RouteDecision(model=cheap_model OU premium_model, complexity=..., reason="por que")
-    # Dica: notebook 05, Etapa 5 — Model Routing.
-    raise NotImplementedError("TODO 6: implementar classify_complexity()")
+    query_normalizada = query.strip().lower()
+
+    palavras_complexas = [
+        "explique",
+        "compare",
+        "analise",
+        "análise",
+        "projete",
+        "detalhe",
+        "detalhar",
+        "resuma",
+        "relacione",
+        "justifique",
+        "avalie",
+        "quais riscos",
+        "passo a passo",
+        "exemplos",
+        "diferença",
+        "diferenças",
+    ]
+
+    if any(palavra in query_normalizada for palavra in palavras_complexas):
+        return RouteDecision(
+            model=premium_model,
+            complexity="complex",
+            reason="A pergunta pede analise, comparacao, explicacao detalhada ou avaliacao.",
+        )
+
+    if len(query_normalizada) > 180:
+        return RouteDecision(
+            model=premium_model,
+            complexity="complex",
+            reason="A pergunta e longa e pode exigir raciocinio mais detalhado.",
+        )
+
+    if len(query_normalizada) < 60 and query_normalizada.endswith("?"):
+        return RouteDecision(
+            model=cheap_model,
+            complexity="simple",
+            reason="A pergunta e curta, direta e termina com interrogacao.",
+        )
+
+    return RouteDecision(
+        model=cheap_model,
+        complexity="simple",
+        reason="A pergunta nao acionou criterios de complexidade.",
+    )
 
 
 def make_client() -> OpenAI:
