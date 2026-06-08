@@ -3,6 +3,8 @@
 Reaproveita o LAB-001. Voce vai preencher 1 TODO aqui (sua tool especifica).
 """
 
+from __future__ import annotations
+
 import json
 import re
 from pathlib import Path

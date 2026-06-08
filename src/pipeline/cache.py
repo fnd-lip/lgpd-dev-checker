@@ -6,12 +6,10 @@ Reaproveita o notebook 05. Voce vai preencher 1 TODO aqui.
 from __future__ import annotations
 
 import hashlib
-import os
+import re
 from typing import Any
 
 import numpy as np
-from openai import OpenAI
-
 
 class ExactCache:
     """Cache por hash SHA256 da query. Captura replays exatos (~10-15% das queries)."""
@@ -42,20 +40,25 @@ class SemanticCache:
         self._embeddings: list[np.ndarray] = []
         self._answers: list[str] = []
 
-        # Inicializa cliente para embeddings (mesmo provider do RAG)
-        if "GEMINI_API_KEY" in os.environ:
-            self._client = OpenAI(
-                api_key=os.environ["GEMINI_API_KEY"],
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-            self._embed_model = os.environ.get("EMBED_MODEL", "gemini-embedding-001")
-        else:
-            self._client = OpenAI()
-            self._embed_model = "text-embedding-3-small"
-
     def _embed(self, text: str) -> np.ndarray:
-        r = self._client.embeddings.create(model=self._embed_model, input=text)
-        return np.array(r.data[0].embedding)
+        """Gera embedding lexical local usando hashing de tokens.
+
+        Nao chama API externa. Serve para cache semantico simples e deterministico.
+        """
+        vector = np.zeros(384, dtype=float)
+
+        tokens = re.findall(r"\w+", text.lower())
+
+        for token in tokens:
+            index = int(hashlib.sha256(token.encode()).hexdigest(), 16) % len(vector)
+            vector[index] += 1.0
+
+        norm = np.linalg.norm(vector)
+
+        if norm == 0:
+            return vector
+
+        return vector / norm
 
     # ------------------------------------------------------------------ TODO 5
     def get(self, query: str) -> str | None:
@@ -63,14 +66,26 @@ class SemanticCache:
         if not self._queries:
             return None
 
-        # SEU CODIGO AQUI — TODO 5
-        # 1. Embedar a query (self._embed)
-        # 2. Calcular similaridade cosseno contra todos self._embeddings:
-        #    cos_sim = np.dot(e, em) / (np.linalg.norm(e) * np.linalg.norm(em))
-        # 3. Pegar idx do maior; se sims[idx] >= self.threshold, retornar self._answers[idx]
-        # 4. Caso contrario, retornar None
-        # Dica: notebook 05, Etapa 4 — Semantic Cache.
-        raise NotImplementedError("TODO 5: implementar SemanticCache.get()")
+        query_embedding = self._embed(query)
+        similarities: list[float] = []
+
+        for cached_embedding in self._embeddings:
+            denominator = np.linalg.norm(query_embedding) * np.linalg.norm(cached_embedding)
+
+            if denominator == 0:
+                similarities.append(0.0)
+                continue
+
+            similarity = float(np.dot(query_embedding, cached_embedding) / denominator)
+            similarities.append(similarity)
+
+        best_index = int(np.argmax(similarities))
+        best_similarity = similarities[best_index]
+
+        if best_similarity >= self.threshold:
+            return self._answers[best_index]
+
+        return None
 
     def put(self, query: str, answer: str) -> None:
         self._queries.append(query)
