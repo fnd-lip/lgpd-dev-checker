@@ -3,15 +3,14 @@
 Reaproveita as funcoes do notebook 02. Voce vai preencher 3 TODOs aqui.
 """
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
-from typing import Any
 
 import chromadb
-from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import OpenAI
+from pypdf import PdfReader
 
 
 def _make_client() -> tuple[OpenAI, str]:
@@ -45,13 +44,7 @@ class RAGPipeline:
         self.llm_model = llm_model or os.environ.get("LLM_MODEL", "gemini-2.5-flash-lite")
         self.embed_model = embed_model or os.environ.get("EMBED_MODEL", "gemini-embedding-001")
 
-        embed_kwargs: dict[str, Any] = {
-            "api_key": os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"),
-            "model_name": self.embed_model,
-        }
-        if embed_api_base:
-            embed_kwargs["api_base"] = embed_api_base
-        self.embed_fn = OpenAIEmbeddingFunction(**embed_kwargs)
+        self.embed_fn = DefaultEmbeddingFunction()
 
         self.corpus_dir = Path(corpus_dir)
         self.persist_dir = persist_dir
@@ -76,6 +69,26 @@ class RAGPipeline:
         # Acumular numa lista `docs` com dicts: {"text": str, "source": str, "page": int}
         # Dica: reaproveite o snippet do notebook 02 (Etapa 1 — Ingestao de PDFs).
         docs: list[dict] = []
+        pdfs = sorted(self.corpus_dir.glob("*.pdf"))
+        if not pdfs:
+            raise RuntimeError(f"Nenhum PDF encontrado em {self.corpus_dir}")
+
+        for caminho_pdf in pdfs:
+            leitor = PdfReader(str(caminho_pdf))
+
+            for numero_pagina, pagina in enumerate(leitor.pages, start=1):
+                texto = (pagina.extract_text() or "").strip()
+
+                if texto:
+                    docs.append(
+                        {
+                            "text": texto,
+                            "source": caminho_pdf.name,
+                            "page": numero_pagina,
+                        }
+                    )
+        if not docs:
+            raise RuntimeError("Nenhum texto extraivel encontrado nos PDFs do corpus")
 
         # SEU CODIGO AQUI — TODO 1.B
         # Aplicar RecursiveCharacterTextSplitter com chunk_size=800, overlap=100
@@ -83,11 +96,52 @@ class RAGPipeline:
         # {"id": unique_id, "text": str, "source": str, "page": int}
         # Dica: reaproveite o notebook 02 (Etapa 2 — Chunking Recursivo).
         chunks: list[dict] = []
+        divisor = RecursiveCharacterTextSplitter(
+            chunk_size=800,
+            chunk_overlap=100,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+
+        for indice_doc, doc in enumerate(docs):
+            partes = divisor.split_text(doc["text"])
+
+            for indice_chunk, parte in enumerate(partes):
+                chunks.append(
+                    {
+                        "id": (
+                            f"{doc['source']}"
+                            f"-p{doc['page']}"
+                            f"-d{indice_doc}"
+                            f"-c{indice_chunk}"
+                        ),
+                        "text": parte,
+                        "source": doc["source"],
+                        "page": doc["page"],
+                    }
+                )
+
+        if not chunks:
+            raise RuntimeError("Nenhum chunk foi gerado a partir do corpus")
 
         # SEU CODIGO AQUI — TODO 1.C
         # Adicionar chunks no Chroma via self.collection.add(ids=, documents=, metadatas=)
         # Lembre de filtrar metadatas para conter apenas {source, page} (Chroma rejeita listas).
+        batch_size = 100
 
+        for inicio in range(0, len(chunks), batch_size):
+            lote = chunks[inicio : inicio + batch_size]
+
+            self.collection.add(
+                ids=[chunk["id"] for chunk in lote],
+                documents=[chunk["text"] for chunk in lote],
+                metadatas=[
+                    {
+                        "source": chunk["source"],
+                        "page": chunk["page"],
+                    }
+                    for chunk in lote
+                ],
+            )
         return self.collection.count()
 
     # ------------------------------------------------------------------ TODO 2
@@ -97,7 +151,30 @@ class RAGPipeline:
         # Usar self.collection.query(query_texts=[query], n_results=k)
         # Retornar lista de dicts: {"text", "source", "page", "distance"}
         # Dica: notebook 02, Etapa 4 — Retrieval.
-        raise NotImplementedError("TODO 2: implementar retrieve()")
+        resultado = self.collection.query(
+            query_texts=[query],
+            n_results=k,
+        )
+
+        documentos = resultado.get("documents", [[]])[0]
+        metadados = resultado.get("metadatas", [[]])[0]
+        distancias = resultado.get("distances", [[]])[0]
+
+        hits: list[dict] = []
+
+        for texto, metadata, distancia in zip(documentos, metadados, distancias):
+            metadata = metadata or {}
+
+            hits.append(
+                {
+                    "text": texto,
+                    "source": metadata.get("source", "desconhecido"),
+                    "page": metadata.get("page", "?"),
+                    "distance": distancia,
+                }
+            )
+
+        return hits
 
     # ------------------------------------------------------------------ TODO 3
     def answer(self, question: str, k: int = 5) -> dict:
@@ -110,7 +187,46 @@ class RAGPipeline:
         # 3. Chamar self.client.chat.completions.create(model=self.llm_model, ...)
         # 4. Retornar {"answer": resposta, "sources": [(s, p) for h in hits]}
         # Dica: notebook 02, Etapa 5 — Augment + Generate.
-        raise NotImplementedError("TODO 3: implementar answer()")
+        if not hits:
+            return {
+                "answer": "Nao encontrado no corpus.",
+                "sources": [],
+            }
+
+        contexto = "\n\n".join(
+            f"[{hit['source']}:{hit['page']}]\n{hit['text']}"
+            for hit in hits
+        )
+
+        prompt = PROMPT_TEMPLATE.format(
+            context=contexto,
+            question=question,
+        )
+
+        resposta = self.client.chat.completions.create(
+            model=self.llm_model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            temperature=0.2,
+        )
+
+        conteudo = resposta.choices[0].message.content or ""
+
+        fontes = list(
+            dict.fromkeys(
+                (hit["source"], hit["page"])
+                for hit in hits
+            )
+        )
+
+        return {
+            "answer": conteudo,
+            "sources": fontes,
+        }
 
 
 PROMPT_TEMPLATE = """Voce e um assistente tecnico. Responda APENAS com base no contexto abaixo.
