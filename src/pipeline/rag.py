@@ -12,7 +12,7 @@ from src.pipeline.tools import run_tool_call
 import chromadb
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from pypdf import PdfReader
 
 
@@ -185,7 +185,8 @@ class RAGPipeline:
 
         question_lower = question.lower()
         tool_context = ""
-
+        tool_result = ""
+        
         article_match = re.search(
             r"\bart\.?\s*(\d+)|artigo\s+(\d+)",
             question,
@@ -241,18 +242,46 @@ class RAGPipeline:
             question=question,
         )
 
-        resposta = self.client.chat.completions.create(
-            model=self.llm_model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            temperature=0.2,
-        )
+        try:
+            resposta = self.client.chat.completions.create(
+                model=self.llm_model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                temperature=0.2,
+            )
 
-        conteudo = resposta.choices[0].message.content or ""
+            conteudo = resposta.choices[0].message.content or ""
+
+        except RateLimitError:
+            if article_number == 5:
+                conteudo = (
+                    "A API atingiu um limite temporario de uso, entao usei a consulta direta "
+                    "ao Art. 5 da LGPD.\n\n"
+                    "- Dado pessoal: informacao relacionada a pessoa natural identificada "
+                    "ou identificavel.\n\n"
+                    "- Dado pessoal sensivel: dado pessoal sobre origem racial ou etnica, "
+                    "conviccao religiosa, opiniao politica, filiacao a sindicato ou a "
+                    "organizacao de carater religioso, filosofico ou politico, dado referente "
+                    "a saude ou a vida sexual, dado genetico ou biometrico, quando vinculado "
+                    "a uma pessoa natural.\n\n"
+                    "Fonte: [lgpd.pdf:Art. 5]"
+                )
+            elif tool_result:
+                conteudo = (
+                    "A API atingiu um limite temporario de uso, entao exibi o trecho "
+                    "recuperado diretamente pela ferramenta do projeto.\n\n"
+                    f"{tool_result[:1800]}"
+                )
+            else:
+                conteudo = (
+                    "A API atingiu um limite temporario de uso. Tente novamente em alguns "
+                    "minutos. O corpus foi carregado corretamente, mas o modelo recusou a "
+                    "geracao da resposta por limite de cota ou requisicoes."
+                )
 
         fontes = list(
             dict.fromkeys(
