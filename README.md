@@ -2,7 +2,9 @@
 
 > Assistente RAG para ajudar desenvolvedores a consultar trechos da LGPD e materiais da ANPD com respostas fundamentadas em fontes.
 
-**Live demo:** https://lgpd-dev-checker-uxpruybqkgou9mvreffnwu.streamlit.app/
+**Live demo:** [Acessar aplicação](https://lgpd-dev-checker-uxpruybqkgou9mvreffnwu.streamlit.app/)
+
+**Video demo:** [Assistir apresentação](https://drive.google.com/file/d/1NtP9dptQ33H25-lQRYfyTzP4ADVSGqr3/view?usp=sharing)
 
 ## Problem statement
 
